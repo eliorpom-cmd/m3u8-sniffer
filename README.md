@@ -23,6 +23,9 @@ brew install eliorpom-cmd/tap/m3u8-sniffer
 m3u8-sniffer-setup
 ```
 
+The extension folder is then `$(brew --prefix)/opt/m3u8-sniffer/libexec/extension`, a path that survives
+`brew upgrade`: the extension reloads itself after an upgrade.
+
 Or download `m3u8-sniffer-<version>-macos.zip` from the [latest release](https://github.com/eliorpom-cmd/m3u8-sniffer/releases/latest),
 unzip it where it will stay, and run `zsh install-host.sh` in Terminal from that folder. It installs Python,
 yt-dlp and ffmpeg with Homebrew if they are missing.

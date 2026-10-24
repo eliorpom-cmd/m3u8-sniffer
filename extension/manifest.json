@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "M3U8 Sniffer",
-  "version": "2.2",
+  "version": "2.2.1",
   "description": "Détecte les vidéos m3u8, bloque les pubs popup et télécharge en 1 clic.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6rFlaa6Pa/ssrTjIXYgPpB+zfQyr9hLEsuDMKGjrwQxu5vPcg2uY+r1mvObIP0p97XaUkYwmFXjVVIfHu85a/Uwq958Jdf8llhUjvgYYNlU+QjUu1Qh6RVbYBF5CaIel0VRMSyNW6JwERTmpYvF1sL+De6vUg9hzgQqSPhrK5mKHR0rcniElN2U4IB8xRzsyg2Ua8priX+2+wexwEq6cNkVsVZ413xtvTsWjTZAmrg7/Nr2tZdJKN+feMmiZM9pXFbyjz9mj3sFovBVN+Ng+UkYBCfgqI/niib36TJxJEiZqUJyNFkbTaV5qfhcMHXmSvaV87gBSISYrl6vFyS/hnQIDAQAB",
   "permissions": [

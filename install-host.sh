@@ -3,7 +3,10 @@
 # then registers the native host so the Chrome extension can launch downloads.
 # Run it again if the folder moves.
 set -e
-dir="${0:A:h}"
+# :a, not :A: run from Homebrew's opt/ link, the path must survive upgrades (no symlink resolving)
+dir="${0:a:h}"
+# The Homebrew formula names its own Python; otherwise Homebrew's python3
+python="${M3U8_PYTHON:-}"
 
 brew_bin=""
 for b in /opt/homebrew/bin /usr/local/bin; do
@@ -15,7 +18,7 @@ if [[ -z "$brew_bin" ]]; then
 fi
 
 missing=()
-[[ -x "$brew_bin/python3" ]] || missing+=(python)
+[[ -n "$python" || -x "$brew_bin/python3" ]] || missing+=(python)
 [[ -x "$brew_bin/yt-dlp" ]] || missing+=(yt-dlp)
 [[ -x "$brew_bin/ffprobe" ]] || missing+=(ffmpeg)
 if (( ${#missing} )); then
@@ -26,7 +29,7 @@ fi
 # Chrome runs the host with a minimal PATH: a wrapper names Homebrew's Python explicitly
 cat > "$dir/host/m3u8_host.sh" <<SH
 #!/bin/sh
-exec "$brew_bin/python3" "$dir/host/m3u8_host.py" "\$@"
+exec "${python:-$brew_bin/python3}" "$dir/host/m3u8_host.py" "\$@"
 SH
 chmod +x "$dir/host/m3u8_host.sh" "$dir/host/m3u8_host.py"
 
