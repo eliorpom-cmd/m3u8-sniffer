@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img class="logo" src="icons/icon128.png" alt="">
+    <div>
+      <h1>M3U8 Sniffer</h1>
+      <p class="sub" id="site">—</p>
+    </div>
+  </header>
+
+  <section class="card row">
+    <div>
+      <div class="label">Bloqueur de pubs popup</div>
+      <div class="hint"><span id="state">Désactivé</span> · <span id="blocked">0 onglet bloqué</span></div>
+    </div>
+    <label class="switch"><input type="checkbox" id="blocker"><span></span></label>
+  </section>
+
+  <h2>Vidéos détectées</h2>
+  <div id="list"></div>
+
+  <template id="item">
+    <section class="card stream">
+      <div class="head">
+        <div class="titles">
+          <div class="tags"></div>
+          <div class="name"></div>
+          <div class="meta"></div>
+        </div>
+        <button class="ghost copy">Copier le lien</button>
+      </div>
+      <button class="ghost more">Voir les détails</button>
+      <div class="details"></div>
+    </section>
+  </template>
+  <script src="popup.js"></script>
+</body>
+</html>

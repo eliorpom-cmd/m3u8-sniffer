@@ -1,0 +1,12 @@
+M3U8 Sniffer pour Chrome (Windows)
+
+1. Décompresse ce dossier à un endroit où il restera (par exemple Documents).
+   Si tu le déplaces plus tard, il faudra refaire les étapes 2 et 3.
+2. Double-clique « Installer (Windows).bat ». Il installe Python, ffmpeg et yt-dlp
+   s'ils manquent (quelques minutes la première fois).
+3. Dans Chrome, ouvre chrome://extensions, active « Mode développeur » en haut à droite,
+   clique « Charger l'extension non empaquetée » et choisis le dossier « extension ».
+4. Épingle l'icône 🎬, lance une vidéo, clique l'icône, choisis la qualité, Télécharger.
+
+Les vidéos arrivent dans Vidéos\Films. Une fenêtre noire montre la progression ;
+ctrl+C l'arrête.

@@ -1,0 +1,23 @@
+# On a v* tag: run the tests, build the Windows and macOS zips, publish them as a GitHub release.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-latest   # make-release.sh is zsh
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests -t . -v
+      - run: node --test tests/*.test.mjs
+      - name: Tag matches the extension version
+        run: |
+          v=$(python3 -c "import json; print(json.load(open('extension/manifest.json'))['version'])")
+          [ "$GITHUB_REF_NAME" = "v$v" ] || { echo "Tag $GITHUB_REF_NAME but manifest version $v"; exit 1; }
+      - run: ./make-release.sh
+      - run: gh release create "$GITHUB_REF_NAME" dist/*.zip --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

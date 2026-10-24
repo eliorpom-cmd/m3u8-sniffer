@@ -1,0 +1,19 @@
+M3U8 Sniffer pour Chrome (macOS)
+
+Le plus simple : avec Homebrew, une seule commande dans le Terminal
+  brew install eliorpom-cmd/tap/m3u8-sniffer
+puis suis les deux lignes qu'elle affiche.
+
+Sans passer par Homebrew pour l'extension :
+1. Décompresse ce dossier à un endroit où il restera (par exemple Documents).
+   Si tu le déplaces plus tard, il faudra refaire les étapes 2 et 3.
+2. Ouvre le Terminal, tape « zsh  » (avec un espace), glisse install-host.sh dans la
+   fenêtre et appuie sur Entrée. Il installe Python, ffmpeg et yt-dlp avec Homebrew
+   s'ils manquent (https://brew.sh doit être installé).
+3. Dans Chrome, ouvre chrome://extensions, active « Mode développeur » en haut à droite,
+   clique « Charger l'extension non empaquetée », appuie sur ⌘⇧G et colle le chemin
+   que le script a copié.
+4. Épingle l'icône 🎬, lance une vidéo, clique l'icône, choisis la qualité, Télécharger.
+
+Les vidéos arrivent dans ~/Movies/Films (« Films » dans le Finder). Le Terminal montre la
+progression ; ctrl+C l'arrête.

@@ -1,0 +1,34 @@
+# Unit tests on every push and pull request: the native host (Python) and the popup's helpers (Node). No network.
+# Plus a Windows smoke test: installer syntax, and a real analysis and short download through the host.
+name: test
+on: [push, pull_request]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: python -m unittest discover -s tests -t . -v
+      - run: node --test tests/*.test.mjs
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Installer parses
+        shell: powershell
+        run: |
+          $errors = $null
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content -Raw windows/install.ps1), [ref]$errors) | Out-Null
+          if ($errors.Count) { $errors; exit 1 }
+      - run: choco install ffmpeg -y --no-progress
+      - run: python -X utf8 tests/smoke_windows.py
