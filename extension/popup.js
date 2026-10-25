@@ -4,7 +4,7 @@ const isMaster = (u) => /master|index|playlist/i.test(u.split("?")[0].split("/")
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 const native = (msg) => new Promise((resolve) =>
   chrome.runtime.sendNativeMessage(HOST, msg, (res) =>
-    resolve(chrome.runtime.lastError ? { error: "Hôte non installé : relance l'installeur (install-host.sh sur Mac, Installer (Windows).bat sur Windows)" } : res)));
+    resolve(chrome.runtime.lastError ? { error: "Hôte injoignable (" + chrome.runtime.lastError.message + ") : relance l'installeur (install-host.sh sur Mac, Installer (Windows).bat sur Windows)" } : res)));
 
 const langNames = new Intl.DisplayNames(["fr"], { type: "language" });
 const langName = (code) => {

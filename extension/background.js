@@ -27,7 +27,7 @@ function analyse(url, page) {
   const job = chrome.storage.session.get(ck).then(async (cached) => {
     if (cached[ck]) return cached[ck];
     const info = await new Promise((resolve) => chrome.runtime.sendNativeMessage(HOST, { action: "formats", url, referer: page },
-      (res) => resolve(chrome.runtime.lastError ? { error: "Hôte non installé : lance install-host.sh" } : res)));
+      (res) => resolve(chrome.runtime.lastError ? { error: "Hôte injoignable (" + chrome.runtime.lastError.message + ") : relance install-host.sh" } : res)));
     if (info && !info.error) await chrome.storage.session.set({ [ck]: info });
     return info || { error: "Pas de réponse de l'hôte" };
   }).finally(() => pending.delete(url));
