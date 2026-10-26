@@ -95,6 +95,15 @@ const seriesDirs = native({ action: "series" }).then((r) => r?.series || []);
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: "#0a84ff" });
   const root = document.getElementById("list");
 
+  // Trash: forget this tab's streams and their cached analyses, to start over after reloading the video.
+  const clear = document.getElementById("clear");
+  clear.hidden = !list.length && !realHosts.length;
+  clear.onclick = async () => {
+    await chrome.storage.session.remove([k, rk, ...list.map((e) => `info:${e.url}`)]);
+    chrome.action.setBadgeText({ tabId: tab.id, text: "" });
+    location.reload();
+  };
+
   // Service worker detected: it fetches from the real server while the page sees an obfuscated URL.
   if (realHosts.length) {
     const info = el("div", "card sw");

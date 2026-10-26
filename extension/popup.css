@@ -9,6 +9,10 @@
 body { margin: 0; width: 380px; padding: 16px; background: var(--bg); color: var(--text);
   font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
 header { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+header > div { flex: 1; min-width: 0; }
+.icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 9px;
+  background: transparent; color: var(--muted); }
+.icon:hover { background: var(--line); color: #ff453a; }
 .logo { width: 36px; height: 36px; border-radius: 10px;
   box-shadow: 0 4px 12px rgba(10,132,255,.35); }
 h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
