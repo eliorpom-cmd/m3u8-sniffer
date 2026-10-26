@@ -26,12 +26,17 @@ if (( ${#missing} )); then
   "$brew_bin/brew" install "${missing[@]}"
 fi
 
-# Chrome runs the host with a minimal PATH: a wrapper names Homebrew's Python explicitly
-cat > "$dir/host/m3u8_host.sh" <<SH
+# Chrome runs the host with a minimal PATH: a wrapper names Homebrew's Python explicitly.
+# The wrapper lives outside the project: Chrome fails to launch a script stored in ~/Documents
+# ("Native host has exited") even with Documents access granted.
+launcher_dir="$HOME/Library/Application Support/M3U8 Sniffer"
+mkdir -p "$launcher_dir"
+launcher="$launcher_dir/m3u8_host.sh"
+cat > "$launcher" <<SH
 #!/bin/sh
 exec "${python:-$brew_bin/python3}" "$dir/host/m3u8_host.py" "\$@"
 SH
-chmod +x "$dir/host/m3u8_host.sh" "$dir/host/m3u8_host.py"
+chmod +x "$launcher" "$dir/host/m3u8_host.py"
 
 dest="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
 mkdir -p "$dest"
@@ -39,7 +44,7 @@ cat > "$dest/dev.byelior.m3u8.json" <<JSON
 {
   "name": "dev.byelior.m3u8",
   "description": "M3U8 Sniffer downloader",
-  "path": "$dir/host/m3u8_host.sh",
+  "path": "$launcher",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://iklhldaffdlkmofoamlacnkcicnnigkf/"]
 }
