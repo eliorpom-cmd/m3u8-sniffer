@@ -1,12 +1,12 @@
 #!/bin/zsh
-# Builds the two release zips in dist/: Windows and macOS (extension + host + installer).
+# Builds the three release zips in dist/: Windows, macOS and Linux (extension + host + installer).
 # Never ships .keys/, .git or local notes. Used by the release workflow and by hand.
 set -e
 dir="${0:A:h}"
 version=$(python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['version'])" "$dir/extension/manifest.json")
 mkdir -p "$dir/dist"
 
-for os in windows macos; do
+for os in windows macos linux; do
   tmp=$(mktemp -d)
   out="$tmp/M3U8 Sniffer"
   mkdir -p "$out/host"
@@ -19,6 +19,10 @@ for os in windows macos; do
     cp "$dir/Installer (Windows).bat" "$out/"
     # Notepad needs CRLF to show the lines
     sed 's/$/\r/' "$dir/windows/LISEZMOI.txt" > "$out/LISEZMOI.txt"
+  elif [[ $os == linux ]]; then
+    cp "$dir/install-host-linux.sh" "$out/"
+    cp "$dir/linux/LISEZMOI.txt" "$out/"
+    chmod +x "$out/install-host-linux.sh" "$out/host/m3u8_host.py"
   else
     cp "$dir/install-host.sh" "$out/"
     cp "$dir/macos/LISEZMOI.txt" "$out/"

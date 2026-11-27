@@ -1,4 +1,4 @@
-# On a v* tag: run the tests, build the Windows and macOS zips, publish them as a GitHub release.
+# On a v* tag: run the tests, build the Windows, macOS and Linux zips, publish them as a GitHub release.
 name: release
 on:
   push:

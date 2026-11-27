@@ -1,5 +1,5 @@
 # Unit tests on every push and pull request: the native host (Python) and the popup's helpers (Node). No network.
-# Plus a Windows smoke test: installer syntax, and a real analysis and short download through the host.
+# Plus Windows and Linux smoke tests: the installer, and a real analysis and short download through the host.
 name: test
 on: [push, pull_request]
 jobs:
@@ -32,3 +32,12 @@ jobs:
           if ($errors.Count) { $errors; exit 1 }
       - run: choco install ffmpeg -y --no-progress
       - run: python -X utf8 tests/smoke_windows.py
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Installer
+        run: bash install-host-linux.sh --non-interactive
+      - run: python3 tests/smoke_linux.py

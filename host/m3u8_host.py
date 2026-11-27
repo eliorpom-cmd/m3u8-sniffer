@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Chrome native messaging host: lists stream qualities and starts downloads in a terminal window.
-macOS (Homebrew tools, Terminal) and Windows (winget tools, console window)."""
-import json, os, re, shlex, shutil, struct, subprocess, sys, tempfile, time, urllib.parse, urllib.request
+macOS (Homebrew tools, Terminal), Windows (winget tools, console window) and Linux (system ffmpeg,
+a terminal emulator or the background)."""
+import json, os, platform, re, shlex, shutil, struct, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
 WINDOWS = sys.platform == "win32"
+LINUX = sys.platform.startswith("linux")
 if WINDOWS:
     import winreg
 
@@ -28,6 +30,14 @@ if WINDOWS:
     ENV = {**os.environ, "PATH": os.pathsep.join([BIN, *LINKS, registry_path(), os.environ.get("PATH", "")])}
     YTDLP = os.path.join(BIN, "yt-dlp.exe")
     FFPROBE, FFMPEG = (shutil.which(n, path=ENV["PATH"]) or n + ".exe" for n in ("ffprobe", "ffmpeg"))
+elif LINUX:
+    # yt-dlp lives next to the host so it can update itself; ffmpeg and ffprobe come from the system
+    # (the installer prints the apt or dnf line when they are missing: no sudo from here)
+    BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+    ENV = {**os.environ, "PATH": os.pathsep.join([BIN, os.environ.get("PATH", ""), "/usr/local/bin:/usr/bin:/bin"])}
+    YTDLP = os.path.join(BIN, "yt-dlp")
+    FFPROBE = shutil.which("ffprobe", path=ENV["PATH"]) or "ffprobe"
+    FFMPEG = None  # yt-dlp finds ffmpeg on the PATH
 else:
     # Chrome gives the host a minimal PATH: Homebrew's folder, Apple Silicon or Intel
     BREW = "/opt/homebrew/bin" if os.path.isdir("/opt/homebrew/bin") else "/usr/local/bin"
@@ -37,6 +47,13 @@ else:
     ENV = {**os.environ, "PATH": f"{BREW}:/usr/bin:/bin"}
 
 YTDLP_EXE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+
+
+def ytdlp_linux_url(machine=None):
+    """yt-dlp's official standalone Linux binary for this processor; the zipapp (needs python3) otherwise."""
+    name = {"x86_64": "yt-dlp_linux", "amd64": "yt-dlp_linux", "aarch64": "yt-dlp_linux_aarch64",
+            "arm64": "yt-dlp_linux_aarch64", "armv7l": "yt-dlp_linux_armv7l"}.get((machine or platform.machine()).lower(), "yt-dlp")
+    return f"https://github.com/yt-dlp/yt-dlp/releases/latest/download/{name}"
 
 
 @contextmanager
@@ -66,7 +83,7 @@ def tools_lock():
 
 
 def update_due():
-    return WINDOWS and os.path.exists(YTDLP) and time.time() - os.path.getmtime(YTDLP) > 7 * 86400
+    return (WINDOWS or LINUX) and os.path.exists(YTDLP) and time.time() - os.path.getmtime(YTDLP) > 7 * 86400
 
 
 def ensure_tools():
@@ -83,22 +100,25 @@ def ensure_tools():
 
 def install_tools():
     global FFPROBE, FFMPEG
-    if not WINDOWS:
+    if not WINDOWS and not LINUX:
         missing = [n for n, p in (("yt-dlp", YTDLP), ("ffmpeg", FFPROBE)) if not os.path.exists(p)]
         if missing:
             subprocess.run([f"{BREW}/brew", "install", *missing], env=ENV, capture_output=True, timeout=900)
         return
     os.makedirs(BIN, exist_ok=True)
     if not os.path.exists(YTDLP):
-        with urllib.request.urlopen(YTDLP_EXE, timeout=120) as r, open(YTDLP + ".part", "wb") as f:
+        with urllib.request.urlopen(ytdlp_linux_url() if LINUX else YTDLP_EXE, timeout=120) as r, \
+                open(YTDLP + ".part", "wb") as f:
             shutil.copyfileobj(r, f)
+        if LINUX:
+            os.chmod(YTDLP + ".part", 0o755)
         os.replace(YTDLP + ".part", YTDLP)
     elif update_due():
         # Sites change often and old yt-dlp versions stop working: update once a week.
         # The date moves first, so a failed update is not retried on every call.
         os.utime(YTDLP)
         subprocess.run([YTDLP, "-U"], env=ENV, capture_output=True, timeout=60)
-    if not shutil.which("ffprobe", path=ENV["PATH"]):
+    if WINDOWS and not shutil.which("ffprobe", path=ENV["PATH"]):
         subprocess.run(["winget", "install", "-e", "--id", "Gyan.FFmpeg", "--silent",
                         "--accept-source-agreements", "--accept-package-agreements"],
                        env=ENV, capture_output=True, timeout=900)
@@ -246,9 +266,14 @@ def formats(url, referer):
 
 # Jellyfin layout under ROOT: movies in Films/, episodes in Séries/<Show (Year)>/Season NN/
 # ~/Documents/Films when it already exists (the author's Jellyfin libraries), otherwise the
-# system's video folder: Videos on Windows (Documents is often synced by OneDrive), Movies on macOS
-ROOT = (os.path.expanduser("~/Documents/Films") if os.path.isdir(os.path.expanduser("~/Documents/Films"))
-        else os.path.expanduser("~/Videos/Films" if WINDOWS else "~/Movies/Films"))
+# system's video folder: Videos on Windows (Documents is often synced by OneDrive), Movies on macOS,
+# $XDG_VIDEOS_DIR or ~/Videos on Linux
+if os.path.isdir(os.path.expanduser("~/Documents/Films")):
+    ROOT = os.path.expanduser("~/Documents/Films")
+elif LINUX:
+    ROOT = os.path.join(os.path.expanduser(os.environ.get("XDG_VIDEOS_DIR") or "~/Videos"), "Films")
+else:
+    ROOT = os.path.expanduser("~/Videos/Films" if WINDOWS else "~/Movies/Films")
 
 
 def series():
@@ -284,6 +309,8 @@ def download(url, fmt, path, referer, audio=None, subs=None):
     cmd += ["--", checked(url)]
     if WINDOWS:
         return start_windows(cmd, dirs, folder)
+    if LINUX:
+        return start_linux(cmd, dirs, folder, name)
     shell = " ".join(shlex.quote(c) for c in cmd)
     # A .command file opened by Launch Services runs in its own Terminal window,
     # independent of this host process (Chrome kills the host once it replies).
@@ -337,9 +364,93 @@ def run_windows(job):
     input("Appuie sur Entrée pour fermer cette fenêtre.")
 
 
+# Linux: terminals tried in this order, each with how it takes the command to run
+TERMINALS = (("x-terminal-emulator", "-e"), ("gnome-terminal", "--"), ("konsole", "-e"))
+
+
+def terminal():
+    for name, flag in TERMINALS:
+        found = shutil.which(name, path=ENV["PATH"])
+        if found:
+            return [found, flag]
+    return None
+
+
+def start_linux(cmd, dirs, folder, name):
+    # A bash script in its own session, so the download outlives this host (Chrome stops it once it
+    # replies): in a terminal window when there is one, otherwise in the background with a log file.
+    shell = " ".join(shlex.quote(c) for c in cmd)
+    job = tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False, prefix="m3u8-")
+    job.write(f"""#!/bin/bash
+# ctrl+C stops yt-dlp, not this script, which still says so
+trap : INT
+[ -t 1 ] && clear
+echo "⬇️  Téléchargement en cours — ctrl+C pour annuler"
+echo {shlex.quote("📁 " + " › ".join(dirs))}
+echo
+if {shell}; then
+  echo; echo "✅ Terminé"
+  command -v xdg-open >/dev/null && xdg-open {shlex.quote(folder)} >/dev/null 2>&1
+else
+  echo; echo "⛔️ Arrêté"
+fi
+rm -f {shlex.quote(job.name)}
+[ -t 0 ] && read -r -p "Appuie sur Entrée pour fermer cette fenêtre." _
+""")
+    job.close()
+    os.chmod(job.name, 0o755)
+    # Nothing may reach the host's stdout: that is Chrome's message channel
+    term = terminal()
+    if term:
+        subprocess.Popen([*term, "bash", job.name], env=ENV, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        return {"ok": True}
+    logs = os.path.expanduser("~/.cache/m3u8-sniffer")
+    os.makedirs(logs, exist_ok=True)
+    with open(os.path.join(logs, f"{name or 'video'}.log"), "w") as log:
+        subprocess.Popen(["bash", job.name], env=ENV, stdin=subprocess.DEVNULL, stdout=log,
+                         stderr=subprocess.STDOUT, start_new_session=True)
+    return {"ok": True}
+
+
+# Linux browsers that get the native messaging manifest, when installed: folder in ~/.config, commands
+BROWSERS = (("google-chrome", ("google-chrome", "google-chrome-stable")),
+            ("chromium", ("chromium", "chromium-browser")))
+MANIFEST = "dev.byelior.m3u8.json"
+EXTENSION_ORIGIN = "chrome-extension://iklhldaffdlkmofoamlacnkcicnnigkf/"
+
+
+def manifest_dirs():
+    """NativeMessagingHosts folders of the installed browsers among Google Chrome and Chromium."""
+    return [os.path.expanduser(f"~/.config/{folder}/NativeMessagingHosts") for folder, commands in BROWSERS
+            if any(shutil.which(c, path=ENV["PATH"]) for c in commands)]
+
+
+def install_linux():
+    """Run by install-host-linux.sh: yt-dlp next to the host, then the manifest for each installed browser."""
+    with tools_lock():
+        install_tools()
+    host = os.path.abspath(__file__)
+    os.chmod(host, 0o755)
+    dirs = manifest_dirs()
+    if not dirs:
+        print("Ni Google Chrome ni Chromium n'est installé : installe l'un des deux puis relance ce script.")
+        return 1
+    manifest = {"name": "dev.byelior.m3u8", "description": "M3U8 Sniffer downloader", "path": host,
+                "type": "stdio", "allowed_origins": [EXTENSION_ORIGIN]}
+    for d in dirs:
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, MANIFEST), "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+        print("Enregistré : " + os.path.join(d, MANIFEST))
+    return 0
+
+
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--run":
         return run_windows(sys.argv[2])
+    if LINUX and sys.argv[1:] == ["--install"]:
+        sys.exit(install_linux())
     msg = read_msg()
     try:
         if msg.get("action") in ("formats", "download"):
