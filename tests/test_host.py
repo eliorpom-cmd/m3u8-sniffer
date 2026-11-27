@@ -10,15 +10,32 @@ import json
 import os
 import shlex
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+# Imported before sys.platform is patched: some standard modules read it at import time
+import concurrent.futures, platform, shutil, subprocess, urllib.request  # noqa: E401,F401
+
 HOST = Path(__file__).resolve().parents[1] / "host" / "m3u8_host.py"
-spec = importlib.util.spec_from_file_location("m3u8_host", HOST)
-host = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(host)
+
+
+def load(platform, env=None, which=None):
+    """A fresh copy of the host as it starts on `platform` (sys.platform is patched), whatever this OS is."""
+    spec = importlib.util.spec_from_file_location("m3u8_host", HOST)
+    module = importlib.util.module_from_spec(spec)
+    with mock.patch.object(sys, "platform", platform), mock.patch.dict(os.environ, env or {}), \
+         mock.patch("shutil.which", which or (lambda name, path=None: None)):
+        if env is not None and "XDG_VIDEOS_DIR" not in env:
+            os.environ.pop("XDG_VIDEOS_DIR", None)
+        spec.loader.exec_module(module)
+    return module
+
+
+# Most tests describe the macOS host (the .command file for Terminal), on any OS
+host = load("darwin")
 
 
 class Urls(unittest.TestCase):
@@ -199,6 +216,127 @@ class Messaging(unittest.TestCase):
             self.assertIn("error", answer)
             if expected:
                 self.assertEqual(answer, expected)
+
+
+def home_env(home):
+    # expanduser reads HOME on POSIX and USERPROFILE on Windows
+    return {"HOME": home, "USERPROFILE": home}
+
+
+class Linux(unittest.TestCase):
+    """The Linux branch: tools, download folder, how a download starts, manifests. Runs on any OS."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        env = mock.patch.dict(os.environ, home_env(self.home))
+        env.start()
+        self.addCleanup(env.stop)
+
+    def linux(self, which=None, **env):
+        return load("linux", {**home_env(self.home), **env}, which)
+
+    def test_yt_dlp_next_to_the_host_and_ffmpeg_from_the_path(self):
+        found = {"ffprobe": "/usr/bin/ffprobe"}
+        h = self.linux(which=lambda name, path=None: found.get(name), PATH="/usr/bin")
+        self.assertTrue(h.LINUX)
+        self.assertFalse(h.WINDOWS)
+        self.assertEqual(h.YTDLP, os.path.join(HOST.parent, "bin", "yt-dlp"))
+        self.assertEqual(h.FFPROBE, "/usr/bin/ffprobe")
+        self.assertIsNone(h.FFMPEG)
+        self.assertEqual(h.ENV["PATH"].split(os.pathsep)[:2], [os.path.join(HOST.parent, "bin"), "/usr/bin"])
+        self.assertEqual(self.linux().FFPROBE, "ffprobe")
+
+    def test_official_binary_for_the_processor(self):
+        base = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
+        self.assertEqual(host.ytdlp_linux_url("x86_64"), base + "yt-dlp_linux")
+        self.assertEqual(host.ytdlp_linux_url("aarch64"), base + "yt-dlp_linux_aarch64")
+        self.assertEqual(host.ytdlp_linux_url("riscv64"), base + "yt-dlp")
+
+    def test_yt_dlp_updates_weekly(self):
+        h = self.linux()
+        ytdlp = Path(self.home, "yt-dlp")
+        ytdlp.write_text("x")
+        with mock.patch.object(h, "YTDLP", str(ytdlp)):
+            self.assertFalse(h.update_due())
+            os.utime(ytdlp, (0, 0))
+            self.assertTrue(h.update_due())
+        self.assertFalse(host.update_due())  # macOS: Homebrew updates it
+
+    def test_download_folder(self):
+        self.assertEqual(self.linux().ROOT, os.path.join(self.home, "Videos", "Films"))
+        videos = os.path.join(self.home, "Vidéos")
+        self.assertEqual(self.linux(XDG_VIDEOS_DIR=videos).ROOT, os.path.join(videos, "Films"))
+        os.makedirs(os.path.join(self.home, "Documents", "Films"))
+        self.assertEqual(self.linux(XDG_VIDEOS_DIR=videos).ROOT, os.path.join(self.home, "Documents", "Films"))
+
+    def test_macos_and_windows_folders_do_not_change(self):
+        self.assertEqual(load("darwin", home_env(self.home)).ROOT, os.path.join(self.home, "Movies", "Films"))
+
+    def start(self, which):
+        h = self.linux(which=which)
+        root = tempfile.mkdtemp()
+        with mock.patch.object(h, "ROOT", root), mock.patch.object(h.subprocess, "Popen") as popen, \
+             mock.patch.object(h.shutil, "which", side_effect=which):
+            self.assertEqual(h.download("https://cdn.example/a.m3u8", "720", ["Films", "Dune"], None), {"ok": True})
+        args, kw = popen.call_args
+        job = Path(args[0][-1])
+        text = job.read_text()
+        os.unlink(job)
+        self.assertTrue(text.startswith("#!/bin/bash\n"))
+        self.assertIn("trap : INT", text)
+        line = next(l.strip() for l in text.splitlines() if l.strip().startswith("if " + shlex.quote(h.YTDLP)))
+        cmd = shlex.split(line[3:].rsplit(";", 1)[0])
+        self.assertEqual(cmd[cmd.index("-o") + 1], os.path.join(root, "Films", "Dune.%(ext)s"))
+        self.assertEqual(cmd[-2:], ["--", "https://cdn.example/a.m3u8"])
+        self.assertTrue(kw["start_new_session"])
+        self.assertIsNot(kw["stdout"], None)  # never Chrome's channel
+        return args[0], kw
+
+    def test_a_download_runs_in_the_first_terminal_found(self):
+        terms = {"x-terminal-emulator": "/usr/bin/x-terminal-emulator", "gnome-terminal": "/usr/bin/gnome-terminal",
+                 "konsole": "/usr/bin/konsole"}
+        argv, _ = self.start(lambda name, path=None: terms.get(name))
+        self.assertEqual(argv[:3], ["/usr/bin/x-terminal-emulator", "-e", "bash"])
+        del terms["x-terminal-emulator"]
+        self.assertEqual(self.start(lambda name, path=None: terms.get(name))[0][:3], ["/usr/bin/gnome-terminal", "--", "bash"])
+        del terms["gnome-terminal"]
+        self.assertEqual(self.start(lambda name, path=None: terms.get(name))[0][:3], ["/usr/bin/konsole", "-e", "bash"])
+
+    def test_without_a_terminal_it_runs_in_the_background_with_a_log(self):
+        argv, kw = self.start(lambda name, path=None: None)
+        self.assertEqual(argv[0], "bash")
+        self.assertEqual(kw["stdout"].name, os.path.join(self.home, ".cache", "m3u8-sniffer", "Dune.log"))
+
+    def test_manifests_only_for_installed_browsers(self):
+        installed = {"google-chrome-stable"}
+        h = self.linux()
+        with mock.patch.object(h.shutil, "which", lambda name, path=None: name if name in installed else None):
+            self.assertEqual(h.manifest_dirs(), [os.path.join(self.home, ".config", "google-chrome", "NativeMessagingHosts")])
+            installed = {"google-chrome", "chromium-browser"}
+            self.assertEqual(h.manifest_dirs(), [os.path.join(self.home, ".config", d, "NativeMessagingHosts")
+                                                 for d in ("google-chrome", "chromium")])
+            installed = set()
+            self.assertEqual(h.manifest_dirs(), [])
+
+    def test_install_writes_the_manifest_for_chrome(self):
+        h = self.linux()
+        with mock.patch.object(h, "install_tools"), mock.patch.object(h.os, "chmod"), \
+             mock.patch.object(h.shutil, "which", lambda name, path=None: name if name == "chromium" else None), \
+             mock.patch("builtins.print"):
+            self.assertEqual(h.install_linux(), 0)
+        d = Path(self.home, ".config", "chromium", "NativeMessagingHosts")
+        manifest = json.loads((d / "dev.byelior.m3u8.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["name"], "dev.byelior.m3u8")
+        self.assertEqual(manifest["path"], str(HOST))
+        self.assertEqual(manifest["allowed_origins"], ["chrome-extension://iklhldaffdlkmofoamlacnkcicnnigkf/"])
+        self.assertFalse(Path(self.home, ".config", "google-chrome").exists())
+
+    def test_install_fails_without_a_browser(self):
+        h = self.linux()
+        with mock.patch.object(h, "install_tools"), mock.patch.object(h.os, "chmod"), mock.patch("builtins.print"), \
+             mock.patch.object(h.shutil, "which", lambda name, path=None: None):
+            self.assertEqual(h.install_linux(), 1)
+        self.assertFalse(Path(self.home, ".config").exists())
 
 
 if __name__ == "__main__":
